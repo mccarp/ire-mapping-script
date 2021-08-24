@@ -6059,6 +6059,8 @@ function mmp.clearpathcache()
   getpathcache = {}
 end
 
+registerAnonymousEventHandler("mmapper updated map","mmp.clearpathcache")
+
 function mmp.showpathcache()
   return getpathcache
 end
@@ -6735,6 +6737,48 @@ end</script>
 					<string>gmcp.Room.Info</string>
 				</eventHandlerList>
 			</Script>
+			<Script isActive="yes" isFolder="no">
+				<name>mmapper_went_outside</name>
+				<packageName></packageName>
+				<script>--genericized version of the went_outside event handlers.
+--when you go outside, it sees if a shorter path can be found using external links. If so, routes you on the new path instead.
+function mmapper_went_outside()
+  if
+    not mmp.autowalking or
+    (mmp.currentroom == mmp.speedWalkPath[#mmp.speedWalkPath]) or
+    table.contains(gmcp.Room.Info.details, "indoors") or
+    table.contains(gmcp.Room.Info.details, "considered indoors") or
+    mmp.orbed(mmp.currentroom)
+  then
+    return
+  end
+  -- repath, maybe that'll allow us to use wings now.
+  local previousDirection = mmp.speedWalkDir[speedWalkCounter + 1]
+  if mmp.speedWalk.type == "room" then
+    raiseEvent("mmp link externals")
+    mmp.getPath(mmp.currentroom, mmp.speedWalkPath[#mmp.speedWalkPath])
+    raiseEvent("mmp clear externals")
+    -- don't need to check return value since that fact shouldnt've changed
+  else
+    mmp.gotoAreaID(getRoomArea(mmp.speedWalkPath[#mmp.speedWalkPath]))
+  end
+  -- if our path didn't change, re-instate it as it was (since the new path starts from this room that we checked at)
+  if speedWalkDir[1] ~= previousDirection then
+    speedWalkCounter = 0
+    mmp.echo("We got outside - going to shortcut with travel device.")
+    if mmp.speedWalk.type == "room" then
+      mmp.gotoRoom(mmp.speedWalkPath[#mmp.speedWalkPath])
+    else
+      mmp.gotoAreaID(getRoomArea(mmp.speedWalkPath[#mmp.speedWalkPath]))
+    end
+    mmp.ignore_speedwalking = true
+  end
+end</script>
+				<eventHandlerList>
+					<string>mmapper went outside</string>
+					<string>mmapper changed continent</string>
+				</eventHandlerList>
+			</Script>
 			<ScriptGroup isActive="yes" isFolder="yes">
 				<name>Wings and other fast travel</name>
 				<packageName></packageName>
@@ -6797,20 +6841,19 @@ function mmp.addWingsAchaea()
         word
       )
   end
-  --creates a special exit from your current room to a destination, and adds it to a table so it can be easily cleared later.
+
   --Achaea stuff!
   if mmp.game ~= "achaea" then
     return
   end
+  local area = getRoomArea(mmp.currentroom)
   --WINGS!
   if
     (mmp.settings.duanathar or mmp.settings.duanatharan or mmp.settings.duantahar) and
-    gmcp.Room and
-    not table.contains(gmcp.Room.Info.details, "indoors") and
-    not mmp.orbed()
+    not mmp.inside
   then
     --Sarapis wings.
-    if mmp.oncontinent(getRoomArea(mmp.currentroom), "Main") then
+    if mmp.oncontinent(area, "Main") then
       if mmp.settings.duanatharan then
         mmp.tempSpecialExit(4882, getcmd("duanatharan"))
         mmp.tempSpecialExit(3885, getcmd("duanathar"))
@@ -6821,7 +6864,7 @@ function mmp.addWingsAchaea()
         mmp.tempSpecialExit(3885, getcmd("duanathar"))
       end
       --Meropis Wings
-    elseif mmp.oncontinent(getRoomArea(mmp.currentroom), "Meropis") then
+    elseif mmp.oncontinent(area, "Meropis") then
       if mmp.settings.duanatharan then
         mmp.tempSpecialExit(51603, getcmd("duanatharan"))
         mmp.tempSpecialExit(51188, getcmd("duanathar"))
@@ -6832,49 +6875,37 @@ function mmp.addWingsAchaea()
         mmp.tempSpecialExit(51188, getcmd("duanathar"))
       end
     end
+  end
+  --Island wings.
+  if mmp.settings.duanatharic and not mmp.inside then
     if
-      mmp.settings.duanatharic and
-      gmcp.Room and
-      not table.contains(gmcp.Room.Info.details, "indoors") and
-      not mmp.orbed()
+      mmp.oncontinent(area, "Main") or
+      mmp.oncontinent(area, "Arcadia") or
+      mmp.oncontinent(area, "Outer") or
+      mmp.oncontinent(area, "Meropis") or
+      mmp.oncontinent(area, "Island") or
+      mmp.oncontinent(area, "North")
     then
-      --Island wings.
-      if
-        mmp.oncontinent(getRoomArea(mmp.currentroom), "Main") or
-        mmp.oncontinent(getRoomArea(mmp.currentroom), "Arcadia") or
-        mmp.oncontinent(getRoomArea(mmp.currentroom), "Outer") or
-        mmp.oncontinent(getRoomArea(mmp.currentroom), "Meropis") or
-        mmp.oncontinent(getRoomArea(mmp.currentroom), "Island") or
-        mmp.oncontinent(getRoomArea(mmp.currentroom), "North")
-      then
-        mmp.tempSpecialExit(47571, getcmd("duanatharic"))
-      end
+      mmp.tempSpecialExit(47571, getcmd("duanatharic"))
     end
   end
   -- Stratospheric Harness support -- PapaGuacamole
-  if
-    mmp.settings.harness and gmcp.Room and not table.contains(gmcp.Room.Info.details, "indoors")
-  then
+  if mmp.settings.harness and not mmp.inside then
     -- eastern isles
-    if mmp.oncontinent(getRoomArea(mmp.currentroom), "Eastern_Isles") then
+    if mmp.oncontinent(area, "Eastern_Isles") then
       mmp.tempSpecialExit(54231, "Shake Harness")
       -- northern isles
-    elseif mmp.oncontinent(getRoomArea(mmp.currentroom), "Northen_Isles") then
+    elseif mmp.oncontinent(area, "Northen_Isles") then
       mmp.tempSpecialExit(48719, "Shake Harness")
       -- western isles
-    elseif mmp.oncontinent(getRoomArea(mmp.currentroom), "Western_Isles") then
+    elseif mmp.oncontinent(area, "Western_Isles") then
       mmp.tempSpecialExit(54632, "Shake Harness")
     end
   end
   -- Air Elemental Aero Soar
-  if
-    mmp.settings.soar and
-    gmcp.Room and
-    not table.contains(gmcp.Room.Info.details, "indoors") and
-    not mmp.orbed()
-  then
+  if mmp.settings.soar and not mmp.inside then
     --Sarapis soar.
-    if mmp.oncontinent(getRoomArea(mmp.currentroom), "Main") then
+    if mmp.oncontinent(area, "Main") then
       if
         gmcp.Char.Status.class == "air Elemental Lord" or
         gmcp.Char.Status.class == "air Elemental Lady"
@@ -6887,7 +6918,7 @@ function mmp.addWingsAchaea()
         -- Stratosphere!
       end
       --Meropis soar
-    elseif mmp.oncontinent(getRoomArea(mmp.currentroom), "Meropis") then
+    elseif mmp.oncontinent(area, "Meropis") then
       if
         gmcp.Char.Status.class == "air Elemental Lord" or
         gmcp.Char.Status.class == "air Elemental Lady"
@@ -6902,7 +6933,7 @@ function mmp.addWingsAchaea()
     end
   end
   --universe tarot
-  if mmp.settings.universe and mmp.oncontinent(getRoomArea(mmp.currentroom), "Main") then
+  if mmp.settings.universe and mmp.oncontinent(area, "Main") then
     local tarotLocations =
       {
         azdun = 1772,
@@ -6937,11 +6968,11 @@ function mmp.addWingsAchaea()
   --gare
   if mmp.settings.gare and gmcp.Char and string.match(gmcp.Char.Status.race, "Dragon") then
     if
-      mmp.oncontinent(getRoomArea(mmp.currentroom), "Main") or
-      mmp.oncontinent(getRoomArea(mmp.currentroom), "Meropis") or
-      mmp.oncontinent(getRoomArea(mmp.currentroom), "Island") or
-      mmp.oncontinent(getRoomArea(mmp.currentroom), "North") or
-      mmp.oncontinent(getRoomArea(mmp.currentroom), "Arcadia")
+      mmp.oncontinent(area, "Main") or
+      mmp.oncontinent(area, "Meropis") or
+      mmp.oncontinent(area, "Island") or
+      mmp.oncontinent(area, "North") or
+      mmp.oncontinent(area, "Arcadia")
     then
       mmp.tempSpecialExit(
         12695,
@@ -6953,8 +6984,6 @@ function mmp.addWingsAchaea()
       )
     end
   end
-  --clears the path cache so it calculates a new route.
-  mmp.clearpathcache()
 end</script>
 					<eventHandlerList />
 				</Script>
@@ -7208,7 +7237,6 @@ function mmp.achaeaBetterWings()
   --if none of the shortcut items are enabled, return.
   if
     not (
-    true or
       mmp.settings.duanathar or
       mmp.settings.duantahar or
       mmp.settings.duanatharan or
@@ -7351,7 +7379,6 @@ function mmp.addWingsLusternia()
   if mmp.settings.tibia then
     linkBubblix("the Cankermore Battlegrounds", 11600, "touch tibia")
   end
-  mmp.clearpathcache()
 end</script>
 					<eventHandlerList />
 				</Script>
@@ -7397,7 +7424,6 @@ function mmp.addWingsImperian()
       -- clear cache so mmp.getPath accounts for the new way
     end
   end
-  mmp.clearpathcache()
 end
 
 mmp.imperian.wingAbleAreas =
@@ -9230,6 +9256,7 @@ function mmp.setKey()
 end
 
 function mmp.setBetterWings()
+  mmp.clearpathcache() -- clear the cache to account for new stuff.
   if mmp.settings.betterwings then
     mmp.echo("Okay, will use improved pathfinding for wings and other fast travel artefacts")
   else
@@ -10630,43 +10657,6 @@ end</script>
 						</eventHandlerList>
 					</Script>
 					<Script isActive="yes" isFolder="no">
-						<name>mmapper_achaea_went_outside</name>
-						<packageName></packageName>
-						<script>-- track whenever we need to use wings or aero soar when we get outside!
-function mmapper_achaea_went_outside()
-  if not mmp.autowalking or not (mmp.settings.duanathar or mmp.settings.duanatharan or mmp.settings.duantahar or mmp.settings.duanatharic or mmp.settings.soar) or mmp.game ~= "achaea" or
-    (mmp.currentroom == mmp.speedWalkPath[#mmp.speedWalkPath]) or
-    table.contains(gmcp.Room.Info.details, "indoors")
-  then return end
-
-  -- repath, maybe that'll allow us to use wings now.
-  raiseEvent("mmp link externals")
-	local previousDirection = mmp.speedWalkDir[speedWalkCounter]
-	if mmp.speedWalk.type == "room" then
-	  mmp.getPath(mmp.currentroom, mmp.speedWalkPath[#mmp.speedWalkPath]) -- don't need to check return value since that fact shouldnt've changed
-	else
-		mmp.gotoAreaID(getRoomArea(mmp.speedWalkPath[#mmp.speedWalkPath]))
-	end
-
-  -- if our path didn't change, re-instate it as it was (since the new path starts from this room that we checked at)
-  if speedWalkDir[1]~=previousDirection then
-    speedWalkCounter = 0
-    mmp.echo("We got outside - going to shortcut with wings.")
-		if mmp.speedWalk.type == "room" then
-			mmp.gotoRoom(mmp.speedWalkPath[#mmp.speedWalkPath])
-		else
-			mmp.gotoAreaID(getRoomArea(mmp.speedWalkPath[#mmp.speedWalkPath]))
-		end
-    mmp.ignore_speedwalking = true
-  end
-	raiseEvent("mmp clear externals")
-end</script>
-						<eventHandlerList>
-							<string>mmapper went outside</string>
-							<string>mmapper changed continent</string>
-						</eventHandlerList>
-					</Script>
-					<Script isActive="yes" isFolder="no">
 						<name>achaea_gaia_whirlpool_reset</name>
 						<packageName></packageName>
 						<script>function achaea_gaia_whirlpool_reset(event, game)
@@ -10679,63 +10669,6 @@ end</script>
 end</script>
 						<eventHandlerList>
 							<string>mmp logged in</string>
-						</eventHandlerList>
-					</Script>
-					<Script isActive="yes" isFolder="no">
-						<name>mmapper_achaea_went_outside_harness</name>
-						<packageName></packageName>
-						<script>-- use Stratospheric Harness in Achaea -- PapaGuacamole
-	
-function mmapper_achaea_went_outside_harness()
-
-	local area = mmp.getAreaName(mmp.currentroom)
-	local areaid = getRoomArea(mmp.currentroom)
-  if not mmp.autowalking or not mmp.settings.harness or not (mmp.game == "achaea") or
-    (mmp.currentroom == mmp.speedWalkPath[#mmp.speedWalkPath]) or
-    table.contains(gmcp.Room.Info.details, "indoors") or
-    (not mmp.oncontinent(areaid, "Eastern_Isles") and not mmp.oncontinent(areaid, "Northern_Isles") and not mmp.oncontinent(areaid, "Western_Isles"))
-		then return end
-
-	local madeEast, madeNorth, madeWest
-
- 	-- eastern isles
- 	if mmp.oncontinent(areaid, "Eastern_Isles") then
- 		addSpecialExit(mmp.currentroom, 54231, [[script:send("shake harness")]])
- 		mmp.clearpathcache() -- clear cache so mmp.getPath accounts for the new way
- 		madeEast = true
- 	-- northern isles
- 	elseif mmp.oncontinent(areaid, "Northern_Isles") then
- 		addSpecialExit(mmp.currentroom, 48719, [[script:send("shake harness")]])
- 		mmp.clearpathcache() -- clear cache so mmp.getPath accounts for the new way
- 		madeNorth = true
- 	-- western isles
- 	elseif mmp.oncontinent(areaid, "Western_Isles") then
- 		addSpecialExit(mmp.currentroom, 54632, [[script:send("shake harness")]])
- 		mmp.clearpathcache() -- clear cache so mmp.getPath accounts for the new way
- 		madeWest = true
- 	end
-
-	mmp.getPath(mmp.currentroom, mmp.speedWalkPath[#mmp.speedWalkPath]) -- don't need to check return value since that fact shouldnt've changed
-	-- if our path didn't change, re-instate it as it was (since the new path starts from this room that we checked at)
-	if speedWalkDir[1]:find("harness", 1, true) then
-	speedWalkCounter = 0
-		mmp.echo("We got outside - going to shortcut with harness.")
-		if mmp.speedWalk.type == "room" then
-			mmp.gotoRoom(mmp.speedWalkPath[#mmp.speedWalkPath])
-		else
-			mmp.gotoAreaID(getRoomArea(mmp.speedWalkPath[#mmp.speedWalkPath]))
-		end
-		mmp.ignore_speedwalking = true
- 	end
-	
-  if madeEast then mmp.clearspecials{54231}
-  elseif madeNorth then mmp.clearspecials{48719}
-  elseif madeWest then mmp.clearspecials{54632} end
-
-end</script>
-						<eventHandlerList>
-							<string>mmapper went outside</string>
-							<string>mmapper changed continent</string>
 						</eventHandlerList>
 					</Script>
 					<Script isActive="yes" isFolder="no">
@@ -10815,132 +10748,8 @@ function mmp.setOrb(city)
   else
     mmp.echo("Orb of Confinement set as &lt;red&gt;INACTIVE&lt;reset&gt; for " .. city:title())
   end
-end
-
-function mmapper_achaea_orb_of_confinement()
-
-  if
-    not mmp.autowalking or
-    not (
-      mmp.settings.duanathar or
-      mmp.settings.duanatharan or
-      mmp.settings.duantahar or
-      mmp.settings.duanatharic or
-      mmp.settings.soar
-    ) or
-    not (mmp.game == "achaea") or
-    (mmp.currentroom == mmp.speedWalkPath[#mmp.speedWalkPath]) or
-    table.contains(gmcp.Room.Info.details, "indoors") or
-    not mmp.orbed()
-  then
-    return
-  end
-  -- repath, just in case we were going to use wings here
-  raiseEvent("mmp link externals")
-  local previousDirection = mmp.speedWalkDir[speedWalkCounter+1]
-  if mmp.speedWalk.type == "room" then
-    mmp.getPath(mmp.currentroom, mmp.speedWalkPath[#mmp.speedWalkPath])
-    -- don't need to check return value since that fact shouldnt've changed
-  else
-    mmp.gotoAreaID(getRoomArea(mmp.speedWalkPath[#mmp.speedWalkPath]))
-  end
-  -- if our path didn't change, re-instate it as it was (since the new path starts from this room that we checked at)
-  if speedWalkDir[1] ~= previousDirection then
-    speedWalkCounter = 0
-    mmp.echo("We're inside, remapping path to not use wings here.")
-    if mmp.speedWalk.type == "room" then
-      mmp.gotoRoom(mmp.speedWalkPath[#mmp.speedWalkPath])
-    else
-      mmp.gotoAreaID(getRoomArea(mmp.speedWalkPath[#mmp.speedWalkPath]))
-    end
-    mmp.ignore_speedwalking = true
-  end
-  raiseEvent("mmp clear externals")
 end</script>
-						<eventHandlerList>
-							<string>mmapper went inside</string>
-						</eventHandlerList>
-					</Script>
-					<Script isActive="yes" isFolder="no">
-						<name>mmapper_achaea_harness_add_exits</name>
-						<packageName></packageName>
-						<script>function mmapper_achaea_harness_add_exits()
-  if not (mmp.game == "achaea" and mmp.settings.harness) then
-    return
-  end
-	local cmd = [[script:send("shake harness",false)]]
-  local areaID = getRoomArea(mmp.currentroom) or 0
-  if mmp.oncontinent(areaID, "Eastern_Isles") then
-    if not mmp.inside then
-      -- make it here
-      addSpecialExit(mmp.currentroom, 54231, cmd)
-    elseif areaID == 192 then
-      -- Zanzibaar
-      addSpecialExit(31215, 54231, cmd)
-    elseif areaID == 191 then
-      -- Clockwork Isle
-      addSpecialExit(23351, 54231, cmd)
-    elseif areaID == 180 then
-      -- Colchis, the Isle of
-      addSpecialExit(19786, 54231, cmd)
-    else
-      --if areaID == 181 then -- Umbrin, the Port of
-      addSpecialExit(18443, 54231, cmd)
-    end
-    --madeEast = true
-  elseif mmp.oncontinent(areaID, "Northern_Isles") then
-    if not mmp.inside then
-      -- make it here
-      addSpecialExit(mmp.currentroom, 48719, cmd)
-    elseif areaID == 194 then
-      -- Ilyrean
-      addSpecialExit(13373, 48719, cmd)
-    elseif areaID == 351 then
-      -- Karbaz
-      addSpecialExit(19740, 48719, cmd)
-    else
-      --if areaID == 206 or getRoomArea(mmp.currentroom) = 294 then -- Suliel Island / Suliel Island (Barricades)
-      addSpecialExit(17768, 48719, cmd)
-    end
-  elseif mmp.oncontinent(areaID, "Western_Isles") then
-    if not mmp.inside then
-      -- make it here
-      addSpecialExit(mmp.currentroom, 54632, cmd)
-    elseif areaID == 162 then
-      --Tapoa
-      addSpecialExit(21184, 54632, cmd)
-    elseif areaID == 207 then
-      --Tuar
-      addSpecialExit(19219, 54632, cmd)
-    else
-      --if areaID == 209 then --Ageiro
-      addSpecialExit(30222, 54632, cmd)
-    end
-  end
-end</script>
-						<eventHandlerList>
-							<string>mmp link externals</string>
-						</eventHandlerList>
-					</Script>
-					<Script isActive="yes" isFolder="no">
-						<name>mmapper_achaea_harness_remove_exits</name>
-						<packageName></packageName>
-						<script>function mmapper_achaea_harness_remove_exits()
-  local areaID = getRoomArea(mmp.currentroom) or 0
-  if not (mmp.game == "achaea" and mmp.settings.harness) then
-    return
-  end
-  if mmp.oncontinent(areaID, "Eastern_Isles") then
-    mmp.clearspecials({54231})
-  elseif mmp.oncontinent(areaID, "Northern_Isles") then
-    mmp.clearspecials({48719})
-  elseif mmp.oncontinent(areaID, "Western_Isles") then
-    mmp.clearspecials({54632})
-  end
-end</script>
-						<eventHandlerList>
-							<string>mmp clear externals</string>
-						</eventHandlerList>
+						<eventHandlerList />
 					</Script>
 				</Script>
 				<Script isActive="yes" isFolder="no">
@@ -11087,42 +10896,6 @@ end</script>
 end</script>
 						<eventHandlerList>
 							<string>mmp logged in</string>
-						</eventHandlerList>
-					</Script>
-					<Script isActive="yes" isFolder="no">
-						<name>mmapper_lusternia_went_outside</name>
-						<packageName></packageName>
-						<script>function mmapper_lusternia_went_outside()
-  -- track whenever we need to use items when we get outside!
-  if
-    not mmp.autowalking or
-    mmp.game ~= "lusternia" or
-    (mmp.currentroom == mmp.speedWalkPath[#mmp.speedWalkPath])
-  then
-    return
-  end
-  -- repath, maybe that'll allow us to use wings now.
-  raiseEvent("mmp link externals")
-	local previousDirection = mmp.speedWalkDir[speedWalkCounter]
-  mmp.getPath(mmp.currentroom, mmp.speedWalkPath[#mmp.speedWalkPath])
-  -- don't need to check return value since that fact shouldnt've changed
-  -- if our path didn't change, re-instate it as it was (since the new path starts from this room that we checked at)
-  if
-    speedWalkDir[1]~=previousDirection
-  then
-    speedWalkCounter = 0
-    mmp.echo("We got outside - going to shortcut with 'bix device.")
-		if mmp.speedWalk.type == "room" then
-			mmp.gotoRoom(mmp.speedWalkPath[#mmp.speedWalkPath])
-		else
-			mmp.gotoAreaID(getRoomArea(mmp.speedWalkPath[#mmp.speedWalkPath]))
-		end
-    mmp.ignore_speedwalking = true
-  end
-  raiseEvent("mmp clear externals")
-end</script>
-						<eventHandlerList>
-							<string>mmapper went outside</string>
 						</eventHandlerList>
 					</Script>
 					<Script isActive="yes" isFolder="no">
@@ -11397,40 +11170,6 @@ end</script>
 end</script>
 						<eventHandlerList>
 							<string>mmp logged in</string>
-						</eventHandlerList>
-					</Script>
-					<Script isActive="yes" isFolder="no">
-						<name>mmapper_imperian_went_outside</name>
-						<packageName></packageName>
-						<script>function mmapper_imperian_went_outside()
-  if
-    not mmp.autowalking or
-    not (mmp.settings.shekinah or mmp.settings.suriel) or
-    mmp.game ~= "imperian" or
-    (mmp.currentroom == mmp.speedWalkPath[#mmp.speedWalkPath]) or
-    table.contains(gmcp.Room.Info.details, "indoors") or
-    table.contains(gmcp.Room.Info.details, "considered indoors") or
-    not table.contains(mmp.imperian.wingAbleAreas, getRoomArea(mmp.currentroom))
-  then
-    return
-  end
-  -- repath, maybe that'll allow us to use wings now.
-  raiseEvent("mmp link externals")
-  local previousDirection = mmp.speedWalkDir[speedWalkCounter]
-  mmp.getPath(mmp.currentroom, mmp.speedWalkPath[#mmp.speedWalkPath])
-  -- don't need to check return value since that fact shouldnt've changed
-  -- if our path didn't change, re-instate it as it was (since the new path starts from this room that we checked at)
-  if speedWalkDir[1] ~= previousDirection then
-    speedWalkCounter = 0
-    mmp.echo("We got outside - going to shortcut with wings.")
-    mmp.gotoRoom(mmp.speedWalkPath[#mmp.speedWalkPath])
-    mmp.ignore_speedwalking = true
-  end
-  raiseEvent("mmp clear externals")
-end</script>
-						<eventHandlerList>
-							<string>mmapper went outside</string>
-							<string>mmapper changed continent</string>
 						</eventHandlerList>
 					</Script>
 				</Script>
